@@ -13,29 +13,19 @@ const int LED_PIN_R = 4;
 const int LED_PIN_G = 6;
 
 SemaphoreHandle_t xSemaphore_r;
+SemaphoreHandle_t xSemaphore_g;
 
 void led_1_task(void *p) {
-  gpio_init(LED_PIN_R);
-  gpio_set_dir(LED_PIN_R, GPIO_OUT);
+    gpio_init(LED_PIN_R);
+    gpio_set_dir(LED_PIN_R, GPIO_OUT);
 
-  int delay = 250;
-  int status = 0;
-
-  while (true) {
-
-    if (xSemaphoreTake(xSemaphore_r, pdMS_TO_TICKS(500)) == pdTRUE) {
-      gpio_put(LED_PIN_R, 1);
-      vTaskDelay(pdMS_TO_TICKS(delay));
-      gpio_put(LED_PIN_R, 0);
-      vTaskDelay(pdMS_TO_TICKS(delay));
-    }
-  }
-}
-
-void btn_callback_r(uint gpio, uint32_t events) {
-    if (events == 0x4) { // fall edge
-        printf("Button R interrupt triggered\n");
-        xSemaphoreGiveFromISR(xSemaphore_r, 0);
+    while (true) {
+        // Espera o semáforo ser liberado pela task do botão
+        if (xSemaphoreTake(xSemaphore_r, portMAX_DELAY) == pdTRUE) {
+            gpio_put(LED_PIN_R, 1); // Acende o LED R
+            vTaskDelay(pdMS_TO_TICKS(250));
+            gpio_put(LED_PIN_R, 0); // Apaga o LED R
+        }
     }
 }
 
@@ -43,35 +33,69 @@ void btn_1_task(void *p) {
     gpio_init(BTN_PIN_R);
     gpio_set_dir(BTN_PIN_R, GPIO_IN);
     gpio_pull_up(BTN_PIN_R);
-    gpio_set_irq_enabled_with_callback(BTN_PIN_R, GPIO_IRQ_EDGE_FALL, true,
-                                       &btn_callback_r);
 
-    int delay = 0;
     while (true) {
-        if (xSemaphoreTake(xSemaphore_r, pdMS_TO_TICKS(500)) == pdTRUE) {
-            if (delay < 1000) {
-                delay += 100;
-            } else {
-                delay = 100;
+        // Verifica se o botão R foi pressionado
+        if (!gpio_get(BTN_PIN_R)) {
+            // Espera o botão ser solto
+            while (!gpio_get(BTN_PIN_R)) {
+                vTaskDelay(pdMS_TO_TICKS(10)); // Debounce
             }
-            printf("Button R delay: %d\n", delay);
-            xQueueSend(xQueueButId_R, &delay, 0);
+            xSemaphoreGive(xSemaphore_r); // Libera o semáforo para acionar o LED R
+        }
+        vTaskDelay(pdMS_TO_TICKS(10)); // Pequeno delay para evitar polling contínuo
+    }
+}
+
+void led_2_task(void *p) {
+    gpio_init(LED_PIN_G);
+    gpio_set_dir(LED_PIN_G, GPIO_OUT);
+
+    while (true) {
+        // Espera o semáforo ser liberado pela task do botão G
+        if (xSemaphoreTake(xSemaphore_g, portMAX_DELAY) == pdTRUE) {
+            gpio_put(LED_PIN_G, 1); // Acende o LED G
+            vTaskDelay(pdMS_TO_TICKS(250));
+            gpio_put(LED_PIN_G, 0); // Apaga o LED G
         }
     }
 }
 
+void btn_2_task(void *p) {
+    gpio_init(BTN_PIN_G);
+    gpio_set_dir(BTN_PIN_G, GPIO_IN);
+    gpio_pull_up(BTN_PIN_G);
+
+    while (true) {
+        // Verifica se o botão G foi pressionado
+        if (!gpio_get(BTN_PIN_G)) {
+            // Espera o botão ser solto
+            while (!gpio_get(BTN_PIN_G)) {
+                vTaskDelay(pdMS_TO_TICKS(10)); // Debounce
+            }
+            xSemaphoreGive(xSemaphore_g); // Libera o semáforo para acionar o LED G
+        }
+        vTaskDelay(pdMS_TO_TICKS(10)); // Pequeno delay para evitar polling contínuo
+    }
+}
 
 int main() {
-  stdio_init_all();
-  printf("Start RTOS \n");
+    stdio_init_all();
+    printf("Start RTOS \n");
 
-  xSemaphore_r = xSemaphoreCreateBinary();
+    // Inicializa os semáforos para os LEDs R e G
+    xSemaphore_r = xSemaphoreCreateBinary();
+    xSemaphore_g = xSemaphoreCreateBinary();
 
-  xTaskCreate(led_1_task, "LED_Task 1", 256, NULL, 1, NULL);
-  xTaskCreate(btn_1_task, "BTN_Task 1", 256, NULL, 1, NULL);
+    // Cria as tasks para os LEDs e botões
+    xTaskCreate(led_1_task, "LED_Task_R", 256, NULL, 1, NULL);
+    xTaskCreate(btn_1_task, "BTN_Task_R", 256, NULL, 1, NULL);
 
-  vTaskStartScheduler();
+    xTaskCreate(led_2_task, "LED_Task_G", 256, NULL, 1, NULL);
+    xTaskCreate(btn_2_task, "BTN_Task_G", 256, NULL, 1, NULL);
 
-  while (true)
-    ;
+    vTaskStartScheduler();
+
+    while (true)
+        ;
 }
