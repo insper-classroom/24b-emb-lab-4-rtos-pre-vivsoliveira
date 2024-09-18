@@ -32,20 +32,34 @@ void led_1_task(void *p) {
   }
 }
 
-void btn_1_task(void *p) {
-  gpio_init(BTN_PIN_R);
-  gpio_set_dir(BTN_PIN_R, GPIO_IN);
-  gpio_pull_up(BTN_PIN_R);
-
-  while (true) {
-    if (!gpio_get(BTN_PIN_R)) {
-      while (!gpio_get(BTN_PIN_R)) {
-        vTaskDelay(pdMS_TO_TICKS(1));
-      }
-      xSemaphoreGive(xSemaphore_r);
+void btn_callback_r(uint gpio, uint32_t events) {
+    if (events == 0x4) { // fall edge
+        printf("Button R interrupt triggered\n");
+        xSemaphoreGiveFromISR(xSemaphore_r, 0);
     }
-  }
 }
+
+void btn_1_task(void *p) {
+    gpio_init(BTN_PIN_R);
+    gpio_set_dir(BTN_PIN_R, GPIO_IN);
+    gpio_pull_up(BTN_PIN_R);
+    gpio_set_irq_enabled_with_callback(BTN_PIN_R, GPIO_IRQ_EDGE_FALL, true,
+                                       &btn_callback_r);
+
+    int delay = 0;
+    while (true) {
+        if (xSemaphoreTake(xSemaphore_r, pdMS_TO_TICKS(500)) == pdTRUE) {
+            if (delay < 1000) {
+                delay += 100;
+            } else {
+                delay = 100;
+            }
+            printf("Button R delay: %d\n", delay);
+            xQueueSend(xQueueButId_R, &delay, 0);
+        }
+    }
+}
+
 
 int main() {
   stdio_init_all();
